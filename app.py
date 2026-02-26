@@ -23,7 +23,7 @@ for filename in os.listdir(ARCHIVE_DIR):
         if (current_time - os.path.getmtime(file_path)) > 604800: 
             os.remove(file_path)
 
-sst.markdown("""
+st.markdown("""
     <style>
     /* Base Jarvis Theme */
     .main { background-color: #0e1117; color: white; }
