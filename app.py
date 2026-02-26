@@ -7,16 +7,16 @@ import sys
 import contextlib
 import traceback
 
-# --- 1. CHROME BROWSER CONFIG ---
+# --- 1. BROWSER INITIALIZATION ---
 st.set_page_config(page_title="Chrome | MARK SPACE", layout="wide", initial_sidebar_state="expanded")
 
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 if 'vfs' not in st.session_state:
-    st.session_state.vfs = {"root": ["index.py"]}
-    st.session_state.file_contents = {"index.py": "print('Browser Ready.')"}
+    st.session_state.vfs = {"root": ["live_sim.py"]}
+    st.session_state.file_contents = {"live_sim.py": "# Live Mode On\nimport matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\nplt.plot(x, y)\nplt.show()"}
 if 'notebooks' not in st.session_state:
-    st.session_state.notebooks = [{"id": 1, "file": "index.py"}]
+    st.session_state.notebooks = [{"id": 1, "file": "live_sim.py"}]
 
 # --- 2. CHROME UI ENGINE ---
 def apply_chrome_ui():
@@ -30,16 +30,15 @@ def apply_chrome_ui():
         [data-testid="stSidebar"] {{ background-color: {bg} !important; border-right: 1px solid #3c4043; }}
         .stMarkdown, label, .stHeader, .stCaption {{ color: {fg} !important; font-weight: bold; }}
         
-        /* Chrome Tab List Styling */
-        .stTabs [data-baseweb="tab-list"] {{ gap: 4px; padding-top: 8px; }}
-        button[role="tab"] {{ color: {fg} !important; opacity: 0.6; }}
-        button[role="tab"][aria-selected="true"] {{ opacity: 1; border-top: 2px solid {accent} !important; }}
+        /* Live Mode Active Pulse */
+        .live-indicator {{ color: #39ff14; font-size: 0.8rem; font-weight: bold; animation: pulse 2s infinite; }}
+        @keyframes pulse {{ 0% {{ opacity: 0.5; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.5; }} }}
     </style>
     """, unsafe_allow_html=True)
 
 apply_chrome_ui()
 
-# --- 3. BROWSER SIDEBAR (CONTROLS & UPLOAD) ---
+# --- 3. BROWSER SIDEBAR ---
 with st.sidebar:
     h_col, t_col = st.columns([3, 1])
     h_col.markdown(f"<h2 style='margin:0;'>🛰️ **MARK SPACE**</h2>", unsafe_allow_html=True)
@@ -48,40 +47,28 @@ with st.sidebar:
         st.rerun()
     
     st.divider()
-    
-    # ➕ NEW TAB LOGIC
     if st.button("＋ NEW BROWSER TAB", use_container_width=True):
         ids = [nb["id"] for nb in st.session_state.notebooks]
         new_id = 1
         while new_id in ids: new_id += 1
-        st.session_state.notebooks.append({"id": new_id, "file": "index.py"})
+        st.session_state.notebooks.append({"id": new_id, "file": "live_sim.py"})
         st.rerun()
 
     st.divider()
-    
-    # 📤 UPLOAD ENGINE
     st.markdown("### 📤 Upload Script")
-    uploaded_file = st.file_uploader("Drop .py file here", type=["py"], label_visibility="collapsed")
+    uploaded_file = st.file_uploader("Drop .py file", type=["py"], label_visibility="collapsed")
     if uploaded_file:
         fname = uploaded_file.name
-        content = uploaded_file.getvalue().decode("utf-8")
-        
-        # Add to Virtual File System
-        if fname not in st.session_state.vfs["root"]:
-            st.session_state.vfs["root"].append(fname)
-            st.session_state.file_contents[fname] = content
-            
-            # Smart Tab logic: Open uploaded file in new tab
-            ids = [nb["id"] for nb in st.session_state.notebooks]
-            new_id = 1
-            while new_id in ids: new_id += 1
-            st.session_state.notebooks.append({"id": new_id, "file": fname})
-            st.success(f"Opened {fname}")
-            st.rerun()
+        st.session_state.file_contents[fname] = uploaded_file.getvalue().decode("utf-8")
+        ids = [nb["id"] for nb in st.session_state.notebooks]
+        new_id = 1
+        while new_id in ids: new_id += 1
+        st.session_state.notebooks.append({"id": new_id, "file": fname})
+        st.rerun()
 
 # --- 4. THE CHROME WORKSPACE ---
 if not st.session_state.notebooks:
-    st.info("No active tabs. Open one or upload a file from the sidebar.")
+    st.info("Browser is empty.")
 else:
     tab_labels = [f"Tab {nb['id']}" for nb in st.session_state.notebooks]
     ui_tabs = st.tabs(tab_labels)
@@ -92,10 +79,17 @@ else:
             
             # TAB TOOLBAR
             header_col1, header_col2 = st.columns([15, 1])
-            header_col1.caption(f"Address: chrome://workspace/tab-{t_id}/{fname}")
-            if header_col2.button("✕", key=f"close_btn_{t_id}", help="Close Tab"):
-                st.session_state.notebooks.pop(i)
-                st.rerun()
+            header_col1.caption(f"Address: chrome://live-engine/tab-{t_id}/{fname}")
+            if header_col2.button("✕", key=f"close_btn_{t_id}"):
+                st.session_state.notebooks.pop(i); st.rerun()
+
+            # LIVE MODE CONTROLS
+            c1, c2 = st.columns([1, 1])
+            run_manual = c1.button("▶️ RUN MANUALLY", key=f"run_m_{t_id}", use_container_width=True)
+            live_active = c2.toggle("⚡ LIVE INTERACTING MODE", key=f"live_{t_id}")
+            
+            if live_active:
+                st.markdown("<span class='live-indicator'>● LIVE ENGINE ACTIVE</span>", unsafe_allow_html=True)
 
             # EDITOR
             code = st.text_area("Source", value=st.session_state.file_contents.get(fname, ""), height=300, key=f"ed_{t_id}", label_visibility="collapsed")
@@ -105,22 +99,20 @@ else:
             st.write("⌨️ **BROWSER CONSOLE**")
             stdin_val = st.text_area("Inputs", key=f"in_{t_id}", height=70, label_visibility="collapsed")
             
-            if st.button("▶️ RUN SCRIPT", key=f"run_{t_id}", use_container_width=True, type="primary"):
-                # Padding stdin to fix float conversion error
+            # EXECUTION LOGIC
+            if run_manual or live_active:
                 sys.stdin = io.StringIO(stdin_val + "\n" * 100)
                 out_buf = io.StringIO()
-                
                 try:
                     with contextlib.redirect_stdout(out_buf):
                         exec(code, {'np': np, 'plt': plt, 'pd': pd, 'st': st}, {})
-                    
                     st.markdown("---")
                     res = out_buf.getvalue()
                     if res: st.code(res)
                     for fig_n in plt.get_fignums():
                         st.pyplot(plt.figure(fig_n))
                 except Exception:
-                    st.error(traceback.format_exc(limit=0))
+                    if not live_active: st.error(traceback.format_exc(limit=0))
                 finally:
                     sys.stdin = sys.__stdin__
                     plt.close('all')
