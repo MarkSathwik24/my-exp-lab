@@ -7,6 +7,7 @@ import io
 import contextlib
 import os
 import time
+import sys
 
 # --- 1. SYSTEM CONFIG & AUTO-CLEANUP ---
 st.set_page_config(page_title="Jarvis Analysis Hub", layout="wide", initial_sidebar_state="expanded")
@@ -31,14 +32,20 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 2. THE CORE EXECUTION ENGINE ---
-def run_analysis_sandbox(file_name, file_bytes):
+def run_analysis_sandbox(file_name, file_bytes, user_inputs=""):
     if file_name.endswith('.py'):
         code = file_bytes.decode("utf-8")
         output_buffer = io.StringIO()
+        
+        # Prepare the mock terminal input by taking the user's text area and adding extra newlines
+        # so the script doesn't crash if it asks for more inputs than provided.
+        input_buffer = io.StringIO(user_inputs + "\n" * 20) 
+        
         sandbox_namespace = {}
         
         try:
-            with contextlib.redirect_stdout(output_buffer):
+            # Redirect BOTH output (print) and input (input())
+            with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stdin(input_buffer):
                 exec(code, globals(), sandbox_namespace)
             
             terminal_output = output_buffer.getvalue()
@@ -90,7 +97,15 @@ if mode == "Live Analysis Hub":
 
         st.divider()
         st.subheader(f"⚙️ Active Session: {f_name}")
-        run_analysis_sandbox(f_name, f_bytes)
+        
+        # Add the Terminal Input Simulator for standard Python scripts
+        terminal_input = ""
+        if f_name.endswith('.py'):
+            terminal_input = st.text_area("⌨️ Terminal Inputs (Optional)", 
+                                          placeholder="If your script uses input(), type the answers here (one per line) BEFORE running.")
+            
+        if st.button("🚀 Execute Script"):
+            run_analysis_sandbox(f_name, f_bytes, user_inputs=terminal_input)
 
 # --- MODULE 2: WEEKLY DATA ARCHIVE ---
 elif mode == "Weekly Data Archive":
@@ -107,8 +122,7 @@ elif mode == "Weekly Data Archive":
             with st.expander(f"📄 {f_name} (Expires in {7 - int(days_old)} days)"):
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("🚀 Run in Lab", key=f"run_{f_name}"):
-                        # Save to persistent memory
+                    if st.button("Load Script", key=f"run_{f_name}"):
                         st.session_state['run_file'] = file_path
                         st.session_state['run_name'] = f_name
                 with col2:
@@ -121,11 +135,8 @@ elif mode == "Weekly Data Archive":
                             del st.session_state['run_file']
                         st.rerun()
                         
-        # Check if a file is loaded in memory
         if 'run_file' in st.session_state and os.path.exists(st.session_state['run_file']):
             st.divider()
-            
-            # Create a header with a Close button to stop the session
             head_col1, head_col2 = st.columns([4, 1])
             head_col1.subheader(f"🟢 Active Session: {st.session_state['run_name']}")
             if head_col2.button("❌ Close Session"):
@@ -133,7 +144,14 @@ elif mode == "Weekly Data Archive":
                 del st.session_state['run_name']
                 st.rerun()
                 
-            # If the session wasn't just closed, run the file
             if 'run_file' in st.session_state:
-                with open(st.session_state['run_file'], "rb") as file:
-                    run_analysis_sandbox(st.session_state['run_name'], file.read())
+                # Provide the same Terminal Input box in the archive runner
+                terminal_input = ""
+                if st.session_state['run_name'].endswith('.py'):
+                    terminal_input = st.text_area("⌨️ Terminal Inputs (Optional)", 
+                                                  placeholder="Provide inputs line by line", 
+                                                  key="archive_input")
+                    
+                if st.button("🚀 Execute Script", key="archive_exec"):
+                    with open(st.session_state['run_file'], "rb") as file:
+                        run_analysis_sandbox(st.session_state['run_name'], file.read(), user_inputs=terminal_input)
