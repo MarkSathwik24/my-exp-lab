@@ -1,72 +1,168 @@
-import numpy as np
+import streamlit as st
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
+import numpy as np
+import pandas as pd
+import io
+import contextlib
+import traceback
 
-# 1. Set up the transformation matrix (initial values)
-def get_matrix(a, b, c, d):
-    return np.array([[a, b], [c, d]])
+# --- 1. SYSTEM CONFIG ---
+st.set_page_config(page_title="Jarvis | Colab Browser", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Setup Figure and Axes
-fig, ax = plt.subplots(figsize=(8, 8))
-plt.subplots_adjust(bottom=0.25)
-ax.set_xlim(-5, 5)
-ax.set_ylim(-5, 5)
-ax.grid(True)
-ax.set_title("Interactive Eigenvalues Visualization")
-ax.axhline(0, color='black',linewidth=1)
-ax.axvline(0, color='black',linewidth=1)
+# --- 2. THEME ENGINE ---
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
 
-# Generate a unit circle to visualize transformation
-theta = np.linspace(0, 2*np.pi, 100)
-circle = np.array([np.cos(theta), np.sin(theta)])
+def toggle_theme():
+    st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
 
-# Plot initial transformed circle and vectors
-transformed_circle = ax.plot(circle[0, :], circle[1, :], color='blue', alpha=0.5)[0]
-vec1 = ax.quiver(0, 0, 1, 0, angles='xy', scale_units='xy', scale=1, color='green', label='Eigenvector 1')
-vec2 = ax.quiver(0, 0, 0, 1, angles='xy', scale_units='xy', scale=1, color='red', label='Eigenvector 2')
-ax.legend()
+# Chrome-style Tabs & Colab Cells CSS
+if st.session_state.theme == 'dark':
+    css = """
+    <style>
+    .main { background-color: #0e1117; color: #c9d1d9; }
+    /* Chrome-like Tabs */
+    button[role="tab"] { background-color: #161b22 !important; border-radius: 8px 8px 0 0 !important; border: 1px solid #30363d !important; border-bottom: none !important; padding: 8px 20px !important; margin-right: 2px !important; color: #8b949e !important; }
+    button[role="tab"][aria-selected="true"] { background-color: #0e1117 !important; color: #58a6ff !important; border-top: 3px solid #58a6ff !important; font-weight: bold !important; }
+    /* Colab Editor */
+    .stTextArea textarea { font-family: 'Courier New', Courier, monospace !important; background-color: #161b22 !important; color: #58d68d !important; border: 1px solid #30363d !important; border-radius: 8px; }
+    /* Output Block */
+    .output-block { background-color: #0d1117; color: #c9d1d9; padding: 15px; border-left: 3px solid #58a6ff; font-family: monospace; white-space: pre-wrap; margin-top: 10px; border-radius: 4px; }
+    .error-block { border-left: 3px solid #f85149; color: #f85149; }
+    </style>
+    """
+else:
+    css = """
+    <style>
+    .main { background-color: #ffffff; color: #24292f; }
+    /* Chrome-like Tabs */
+    button[role="tab"] { background-color: #e1e4e8 !important; border-radius: 8px 8px 0 0 !important; border: 1px solid #d0d7de !important; border-bottom: none !important; padding: 8px 20px !important; margin-right: 2px !important; color: #57606a !important; }
+    button[role="tab"][aria-selected="true"] { background-color: #ffffff !important; color: #0969da !important; border-top: 3px solid #0969da !important; font-weight: bold !important; }
+    /* Colab Editor */
+    .stTextArea textarea { font-family: 'Courier New', Courier, monospace !important; background-color: #f6f8fa !important; color: #0969da !important; border: 1px solid #d0d7de !important; border-radius: 8px; }
+    /* Output Block */
+    .output-block { background-color: #f6f8fa; color: #24292f; padding: 15px; border-left: 3px solid #0969da; font-family: monospace; white-space: pre-wrap; margin-top: 10px; border-radius: 4px; }
+    .error-block { border-left: 3px solid #cf222e; color: #cf222e; }
+    </style>
+    """
+st.markdown(css, unsafe_allow_html=True)
 
-# 3. Define Slider Axes and Initial Values
-ax_a = plt.axes([0.25, 0.15, 0.65, 0.03])
-ax_b = plt.axes([0.25, 0.1, 0.65, 0.03])
-ax_c = plt.axes([0.25, 0.05, 0.65, 0.03])
-ax_d = plt.axes([0.25, 0.00, 0.65, 0.03])
+# --- 3. MULTI-INSTANCE MEMORY ---
+if 'notebooks' not in st.session_state:
+    st.session_state.notebooks = {
+        "Tab 1": {
+            "code": "# Jarvis Colab Environment\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nprint('System Online.')",
+            "namespace": {'np': np, 'plt': plt, 'pd': pd},
+            "output_text": "",
+            "output_error": False,
+            "figs_matplotlib": []
+        }
+    }
+if 'tab_counter' not in st.session_state:
+    st.session_state.tab_counter = 1
 
-s_a = Slider(ax_a, 'a', -2.0, 2.0, valinit=1.0)
-s_b = Slider(ax_b, 'b', -2.0, 2.0, valinit=0.0)
-s_c = Slider(ax_c, 'c', -2.0, 2.0, valinit=0.0)
-s_d = Slider(ax_d, 'd', -2.0, 2.0, valinit=1.0)
-
-# 4. Update Function
-def update(val):
-    a, b, c, d = s_a.val, s_b.val, s_c.val, s_d.val
-    A = get_matrix(a, b, c, d)
+# --- 4. SIDEBAR NAVIGATION ---
+with st.sidebar:
+    st.title("🛰️ Jarvis Controls")
     
-    # Calculate transformation
-    new_circle = A @ circle
-    transformed_circle.set_data(new_circle[0, :], new_circle[1, :])
+    # Sun/Moon Toggle
+    btn_icon = "☀️ Light Mode" if st.session_state.theme == 'dark' else "🌙 Dark Mode"
+    if st.button(btn_icon, use_container_width=True):
+        toggle_theme()
+        st.rerun()
+        
+    st.divider()
     
-    # Calculate Eigenvalues/Vectors
-    try:
-        eigenvalues, eigenvectors = np.linalg.eig(A)
-        # Scale vectors by eigenvalues for visualization
-        v1 = eigenvectors[:, 0] * eigenvalues[0]
-        v2 = eigenvectors[:, 1] * eigenvalues[1]
+    # Chrome-style New Tab
+    if st.button("➕ Open New Tab", use_container_width=True):
+        st.session_state.tab_counter += 1
+        new_tab_name = f"Tab {st.session_state.tab_counter}"
+        st.session_state.notebooks[new_tab_name] = {
+            "code": f"# {new_tab_name}\n",
+            "namespace": {'np': np, 'plt': plt, 'pd': pd},
+            "output_text": "",
+            "output_error": False,
+            "figs_matplotlib": []
+        }
+        st.rerun()
         
-        # Update vectors
-        vec1.set_UVC(v1[0], v1[1])
-        vec2.set_UVC(v2[0], v2[1])
+    st.markdown("**Active Tabs:**")
+    for nb_name in list(st.session_state.notebooks.keys()):
+        c1, c2 = st.columns([4, 1])
+        c1.write(f"📄 {nb_name}")
+        if len(st.session_state.notebooks) > 1:
+            if c2.button("❌", key=f"del_{nb_name}"):
+                del st.session_state.notebooks[nb_name]
+                st.rerun()
+
+# --- 5. BROWSER TABS & COLAB EXECUTION ---
+st.title("Jarvis Colab Engine")
+tab_names = list(st.session_state.notebooks.keys())
+tabs = st.tabs(tab_names)
+
+for i, tab_name in enumerate(tab_names):
+    with tabs[i]:
+        nb = st.session_state.notebooks[tab_name]
         
-        ax.set_title(f"Eigenvalues: {eigenvalues[0]:.2f}, {eigenvalues[1]:.2f}")
-    except:
-        pass
-    fig.canvas.draw_idle()
+        # Code Editor
+        current_code = st.text_area(f"Code for {tab_name}", value=nb["code"], height=250, key=f"code_{tab_name}", label_visibility="collapsed")
+        nb["code"] = current_code 
+        
+        col_run, col_up = st.columns([1, 4])
+        
+        with col_up:
+            # File injection
+            uploaded_file = st.file_uploader(f"Upload .py to {tab_name}", type=['py'], key=f"up_{tab_name}", label_visibility="collapsed")
+            if uploaded_file is not None:
+                file_content = uploaded_file.getvalue().decode("utf-8")
+                if nb["code"] != file_content:
+                    nb["code"] = file_content
+                    st.rerun()
 
-# Register update function with sliders
-s_a.on_changed(update)
-s_b.on_changed(update)
-s_c.on_changed(update)
-s_d.on_changed(update)
+        with col_run:
+            st.write("") # Spacing
+            if st.button(f"▶️ Run Code", type="primary", key=f"run_{tab_name}", use_container_width=True):
+                output_buffer = io.StringIO()
+                nb["figs_matplotlib"] = []
+                nb["output_error"] = False
+                
+                try:
+                    with contextlib.redirect_stdout(output_buffer):
+                        try:
+                            result = eval(current_code, globals(), nb["namespace"])
+                            if result is not None: print(result)
+                        except SyntaxError:
+                            exec(current_code, globals(), nb["namespace"])
+                            
+                    nb["output_text"] = output_buffer.getvalue()
+                    
+                    # Capture Matplotlib Figures as Images
+                    fig_nums = plt.get_fignums()
+                    for f_num in fig_nums:
+                        fig = plt.figure(f_num)
+                        buf = io.BytesIO()
+                        # Dynamic background based on theme
+                        face_c = 'white' if st.session_state.theme == 'dark' else '#f6f8fa'
+                        fig.savefig(buf, format="png", bbox_inches="tight", facecolor=face_c)
+                        buf.seek(0)
+                        nb["figs_matplotlib"].append(buf.getvalue())
+                        
+                except Exception as e:
+                    nb["output_text"] = traceback.format_exc(limit=0)
+                    nb["output_error"] = True
+                    
+                finally:
+                    plt.close('all') 
+                    st.rerun() 
 
-update(None) # Initial run
-plt.show()
+        # Output Section
+        if nb["output_text"] or nb["figs_matplotlib"]:
+            st.markdown("---")
+            if nb["output_text"]:
+                if nb["output_error"]:
+                    st.markdown(f"<div class='output-block error-block'>{nb['output_text']}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div class='output-block'>{nb['output_text']}</div>", unsafe_allow_html=True)
+            
+            for fig_bytes in nb["figs_matplotlib"]:
+                st.image(fig_bytes)
