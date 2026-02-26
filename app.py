@@ -98,3 +98,8 @@ else:
                 finally:
                     sys.stdin = sys.__stdin__
                     plt.close('all')
+
+# Capture Plotly Figures directly from the execution namespace
+for var_name, var_value in local_scope.items():
+    if "plotly.graph_objs._figure.Figure" in str(type(var_value)):
+        st.plotly_chart(var_value, use_container_width=True) # Render interactive chart
