@@ -16,14 +16,15 @@ if 'vfs' not in st.session_state:
     st.session_state.vfs = {"root": ["main.py"]}
     st.session_state.file_contents = {"main.py": "print('Welcome to MARK SPACE')"}
 if 'notebooks' not in st.session_state:
-    st.session_state.notebooks = {"Tab 1": "main.py"}
-if 'tab_counter' not in st.session_state:
-    st.session_state.tab_counter = 1
+    # We now store tabs as an ordered list of dicts for Chrome-style indexing
+    st.session_state.notebooks = [{"id": 1, "file": "main.py"}]
+if 'active_tab_idx' not in st.session_state:
+    st.session_state.active_tab_idx = 0
 
 def toggle_theme():
     st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
 
-# UI Styling with High Contrast
+# UI Styling
 if st.session_state.theme == 'dark':
     bg, fg, editor_bg, accent = "#0d1117", "#e6edf3", "#161b22", "#58a6ff"
     term_bg, term_fg = "#000000", "#39ff14"
@@ -55,8 +56,13 @@ def create_file_pop():
             if name not in st.session_state.vfs["root"]:
                 st.session_state.vfs["root"].append(name)
                 st.session_state.file_contents[name] = f"# {name}\n"
-                st.success(f"Created {name}")
-                st.rerun()
+            # Smart Tab Logic: Find lowest available ID
+            existing_ids = [nb["id"] for nb in st.session_state.notebooks]
+            new_id = 1
+            while new_id in existing_ids: new_id += 1
+            st.session_state.notebooks.append({"id": new_id, "file": name})
+            st.session_state.active_tab_idx = len(st.session_state.notebooks) - 1
+            st.rerun()
     if c2.button("CANCEL", use_container_width=True): st.rerun()
 
 # --- 3. SIDEBAR: WORKSPACE CONTROLS ---
@@ -70,14 +76,16 @@ with st.sidebar:
     workspace_mode = st.radio("WORKSPACE MODE", ["📊 Plotter Mode", "💻 Terminal Compiler"])
     
     st.divider()
-    # DISTINCT TAB VS FILE ACTIONS
+    # NEW TAB (Chrome Logic)
     if st.button("➕ NEW TAB", use_container_width=True):
-        st.session_state.tab_counter += 1
-        new_tab_label = f"Tab {st.session_state.tab_counter}"
-        # Scratchpad default
-        st.session_state.notebooks[new_tab_label] = "scratchpad.py"
+        existing_ids = [nb["id"] for nb in st.session_state.notebooks]
+        new_id = 1
+        while new_id in existing_ids: new_id += 1
+        
+        st.session_state.notebooks.append({"id": new_id, "file": "scratchpad.py"})
         if "scratchpad.py" not in st.session_state.file_contents:
             st.session_state.file_contents["scratchpad.py"] = "# Scratchpad\n"
+        st.session_state.active_tab_idx = len(st.session_state.notebooks) - 1
         st.rerun()
 
     if st.button("📄 NEW FILE", use_container_width=True):
@@ -88,39 +96,48 @@ with st.sidebar:
     for f in st.session_state.vfs["root"]:
         c1, c2 = st.columns([5, 1])
         if c1.button(f"📄 {f}", key=f"sb_{f}", use_container_width=True):
-            st.session_state.tab_counter += 1
-            st.session_state.notebooks[f"Tab {st.session_state.tab_counter}"] = f
+            existing_ids = [nb["id"] for nb in st.session_state.notebooks]
+            new_id = 1
+            while new_id in existing_ids: new_id += 1
+            st.session_state.notebooks.append({"id": new_id, "file": f})
+            st.session_state.active_tab_idx = len(st.session_state.notebooks) - 1
             st.rerun()
         if c2.button("✕", key=f"del_{f}"):
             st.session_state.vfs["root"].remove(f); st.rerun()
 
 # --- 4. MAIN INTERFACE ---
-tab_keys = list(st.session_state.notebooks.keys())
-if not tab_keys:
-    st.info("Click '➕ NEW TAB' or select a file from the Explorer.")
+if not st.session_state.notebooks:
+    st.info("Click '➕ NEW TAB' to begin.")
 else:
-    ui_tabs = st.tabs(tab_keys)
-    for i, t_key in enumerate(tab_keys):
+    # Dynamic Tab Labels
+    tab_labels = [f"Tab {nb['id']}" for nb in st.session_state.notebooks]
+    ui_tabs = st.tabs(tab_labels)
+    
+    for i, nb in enumerate(st.session_state.notebooks):
         with ui_tabs[i]:
-            fname = st.session_state.notebooks[t_key]
+            fname = nb["file"]
+            t_id = nb["id"]
             
-            # Tab Header
+            # Header
             th1, th2 = st.columns([10, 1])
-            th1.markdown(f"**WORKSPACE:** `{t_key}` | **FILE:** `{fname}`")
-            if th2.button("✕", key=f"cls_{t_key}"):
-                del st.session_state.notebooks[t_key]; st.rerun()
+            th1.markdown(f"**WORKSPACE:** `Tab {t_id}` | **FILE:** `{fname}`")
+            if th2.button("✕", key=f"cls_{t_id}"):
+                st.session_state.notebooks.pop(i)
+                # Adjust active index if necessary
+                st.session_state.active_tab_idx = max(0, i - 1)
+                st.rerun()
 
             # Editor
-            code = st.text_area("EDITOR", value=st.session_state.file_contents.get(fname, ""), height=300, key=f"ed_{t_key}", label_visibility="collapsed")
+            code = st.text_area("EDITOR", value=st.session_state.file_contents.get(fname, ""), height=300, key=f"ed_{t_id}", label_visibility="collapsed")
             st.session_state.file_contents[fname] = code
 
-            # Input Handling for Compiler
+            # Input Handling
             stdin_data = ""
             if workspace_mode == "💻 Terminal Compiler":
                 st.write("⌨️ **STDIN / INPUT STREAM**")
-                stdin_data = st.text_area("Inputs (one per line)", key=f"in_{t_key}", height=80, label_visibility="collapsed")
+                stdin_data = st.text_area("Inputs (one per line)", key=f"in_{t_id}", height=80, label_visibility="collapsed")
             
-            if st.button("▶️ RUN EXECUTION", type="primary", use_container_width=True, key=f"run_{t_key}"):
+            if st.button("▶️ RUN EXECUTION", type="primary", use_container_width=True, key=f"run_{t_id}"):
                 output_buffer = io.StringIO()
                 sys.stdin = io.StringIO(stdin_data + "\n" * 100)
                 
