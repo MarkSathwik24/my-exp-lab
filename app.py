@@ -23,11 +23,29 @@ for filename in os.listdir(ARCHIVE_DIR):
         if (current_time - os.path.getmtime(file_path)) > 604800: 
             os.remove(file_path)
 
-st.markdown("""
+sst.markdown("""
     <style>
+    /* Base Jarvis Theme */
     .main { background-color: #0e1117; color: white; }
     .stButton>button { width: 100%; border-radius: 5px; background-color: #1e1e26; color: #00d4ff; border: 1px solid #00d4ff; }
     .stButton>button:hover { background-color: #00d4ff; color: #000000; }
+    
+    /* The Jarvis 'Landing Pad' Upgrade */
+    [data-testid="stFileUploadDropzone"] {
+        min-height: 250px !important;
+        border: 2px dashed #00d4ff !important;
+        background-color: rgba(0, 212, 255, 0.05) !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease-in-out;
+    }
+    
+    /* Hover effect when you drag a file over it */
+    [data-testid="stFileUploadDropzone"]:hover {
+        background-color: rgba(0, 212, 255, 0.15) !important;
+        border: 2px solid #00d4ff !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
