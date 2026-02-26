@@ -32,45 +32,55 @@ if page == "Dashboard":
     st.subheader("Recent Activity")
     st.write("System is ready for aerospace analysis.")
 
-# --- MODULE 2: CODE LIBRARY (Optimized for Real-Time Changes) ---
+# --- MODULE 2: CODE LIBRARY (Single-Page Layout) ---
 elif page == "Code Library":
-    st.title("📚 Research Library")
+    st.title("📚 Interactive Research Lab")
     
-    lib_choice = st.selectbox("Choose Script", ["Interactive Eigenvalue Viz", "PW2000 Thrust Tracker"])
-    
-    if lib_choice == "Interactive Eigenvalue Viz":
-        st.sidebar.markdown("### 🎛️ Matrix Controls")
-        # Placing sliders in the sidebar allows the plot on the right to update live
-        a11 = st.sidebar.slider("a11 (Top Left)", -5.0, 5.0, 2.0)
-        a12 = st.sidebar.slider("a12 (Top Right)", -5.0, 5.0, 1.0)
-        a21 = st.sidebar.slider("a21 (Bottom Left)", -5.0, 5.0, 1.0)
-        a22 = st.sidebar.slider("a22 (Bottom Right)", -5.0, 5.0, 2.0)
+    # Selection at the top
+    lib_choice = st.selectbox("Select Experiment", ["Eigenvalue Dynamics", "GNSS Satellite Signal"])
 
-        # Calculation
-        A = np.array([[a11, a12], [a21, a22]])
-        vals, vecs = np.linalg.eig(A)
+    if lib_choice == "Eigenvalue Dynamics":
+        # Create two columns: Left for Sliders, Right for Plot
+        # On a phone, these will stack vertically for easy touch access
+        control_col, plot_col = st.columns([1, 2])
 
-        # Layout for results
-        col1, col2 = st.columns(2)
-        with col1:
-            st.latex(f"A = \\begin{{bmatrix}} {a11} & {a12} \\\\ {a21} & {a22} \\end{{bmatrix}}")
-        with col2:
-            st.write(f"**λ₁:** {vals[0]:.2f} | **λ₂:** {vals[1]:.2f}")
+        with control_col:
+            st.subheader("🎛️ Matrix Inputs")
+            # Real-time sliders
+            a11 = st.slider("a11", -5.0, 5.0, 2.0)
+            a12 = st.slider("a12", -5.0, 5.0, 1.0)
+            a21 = st.slider("a21", -5.0, 5.0, 1.0)
+            a22 = st.slider("a22", -5.0, 5.0, 2.0)
+            
+            # Instant Math Feedback
+            A = np.array([[a11, a12], [a21, a22]])
+            vals, vecs = np.linalg.eig(A)
+            st.write(f"**λ₁:** {vals[0]:.2f}")
+            st.write(f"**λ₂:** {vals[1]:.2f}")
 
-        # Live Plotly Chart
-        fig = px.scatter(
-            x=[0, vecs[0,0] * vals[0], 0, vecs[0,1] * vals[1]], 
-            y=[0, vecs[1,0] * vals[0], 0, vecs[1,1] * vals[1]],
-            title="Principal Directions (Eigenvectors)",
-            labels={'x': 'X-Axis', 'y': 'Y-Axis'},
-            template="plotly_dark"
-        )
-        # Adding lines to the vectors
-        fig.add_trace(px.line(x=[0, vecs[0,0]*vals[0]], y=[0, vecs[1,0]*vals[0]]).data[0])
-        fig.add_trace(px.line(x=[0, vecs[0,1]*vals[1]], y=[0, vecs[1,1]*vals[1]]).data[0])
-        
-        st.plotly_chart(fig, use_container_width=True)
+        with plot_col:
+            # The plot updates instantly as you move sliders in 'control_col'
+            fig = go.Figure()
+            
+            # Plotting Eigenvectors as lines
+            colors = ['#FF4B4B', '#00CC96']
+            for i in range(2):
+                v = vecs[:, i] * vals[i]
+                fig.add_trace(go.Scatter(
+                    x=[0, v[0]], y=[0, v[1]],
+                    mode='lines+markers',
+                    name=f'Vector {i+1}',
+                    line=dict(color=colors[i], width=4)
+                ))
 
+            fig.update_layout(
+                template="plotly_dark",
+                height=400,
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(range=[-7, 7]),
+                yaxis=dict(range=[-7, 7])
+            )
+            st.plotly_chart(fig, use_container_width=True)
 # --- MODULE 3: LIVE UPLOAD (FIXED LOGIC) ---
 elif page == "Live Upload":
     st.title("📥 Mobile Upload")
