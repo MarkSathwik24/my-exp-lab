@@ -13,10 +13,10 @@ st.set_page_config(page_title="Chrome | MARK SPACE", layout="wide", initial_side
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 if 'vfs' not in st.session_state:
-    st.session_state.vfs = {"root": ["live_sim.py"]}
-    st.session_state.file_contents = {"live_sim.py": "# Live Mode On\nimport matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\nplt.plot(x, y)\nplt.show()"}
+    st.session_state.vfs = {"root": ["main.py"]}
+    st.session_state.file_contents = {"main.py": "print('System Persistent.')"}
 if 'notebooks' not in st.session_state:
-    st.session_state.notebooks = [{"id": 1, "file": "live_sim.py"}]
+    st.session_state.notebooks = [{"id": 1, "file": "main.py"}]
 
 # --- 2. CHROME UI ENGINE ---
 def apply_chrome_ui():
@@ -29,10 +29,8 @@ def apply_chrome_ui():
         .stApp {{ background-color: {bg}; color: {fg}; }}
         [data-testid="stSidebar"] {{ background-color: {bg} !important; border-right: 1px solid #3c4043; }}
         .stMarkdown, label, .stHeader, .stCaption {{ color: {fg} !important; font-weight: bold; }}
-        
-        /* Live Mode Active Pulse */
-        .live-indicator {{ color: #39ff14; font-size: 0.8rem; font-weight: bold; animation: pulse 2s infinite; }}
-        @keyframes pulse {{ 0% {{ opacity: 0.5; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.5; }} }}
+        button[role="tab"] {{ color: {fg} !important; opacity: 0.6; }}
+        button[role="tab"][aria-selected="true"] {{ opacity: 1; border-top: 2px solid {accent} !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,20 +49,21 @@ with st.sidebar:
         ids = [nb["id"] for nb in st.session_state.notebooks]
         new_id = 1
         while new_id in ids: new_id += 1
-        st.session_state.notebooks.append({"id": new_id, "file": "live_sim.py"})
+        st.session_state.notebooks.append({"id": new_id, "file": "main.py"})
         st.rerun()
 
     st.divider()
-    st.markdown("### 📤 Upload Script")
-    uploaded_file = st.file_uploader("Drop .py file", type=["py"], label_visibility="collapsed")
-    if uploaded_file:
-        fname = uploaded_file.name
-        st.session_state.file_contents[fname] = uploaded_file.getvalue().decode("utf-8")
-        ids = [nb["id"] for nb in st.session_state.notebooks]
-        new_id = 1
-        while new_id in ids: new_id += 1
-        st.session_state.notebooks.append({"id": new_id, "file": fname})
-        st.rerun()
+    st.markdown("### 📁 EXPLORER")
+    for f in st.session_state.vfs["root"]:
+        c1, c2 = st.columns([5, 1])
+        if c1.button(f"📄 {f}", key=f"sb_{f}", use_container_width=True):
+            ids = [nb["id"] for nb in st.session_state.notebooks]
+            new_id = 1
+            while new_id in ids: new_id += 1
+            st.session_state.notebooks.append({"id": new_id, "file": f})
+            st.rerun()
+        if c2.button("✕", key=f"del_{f}"):
+            st.session_state.vfs["root"].remove(f); st.rerun()
 
 # --- 4. THE CHROME WORKSPACE ---
 if not st.session_state.notebooks:
@@ -77,29 +76,37 @@ else:
         with ui_tabs[i]:
             t_id, fname = nb["id"], nb["file"]
             
-            # TAB TOOLBAR
-            header_col1, header_col2 = st.columns([15, 1])
-            header_col1.caption(f"Address: chrome://live-engine/tab-{t_id}/{fname}")
-            if header_col2.button("✕", key=f"close_btn_{t_id}"):
+            # --- TAB TOOLBAR WITH SAVE ---
+            header_col1, header_col2, header_col3 = st.columns([12, 3, 1])
+            header_col1.caption(f"Address: chrome://workspace/tab-{t_id}/{fname}")
+            
+            # Save Trigger: Commits current code to VFS
+            if header_col2.button("💾 SAVE FILE", key=f"save_{t_id}", use_container_width=True):
+                if fname not in st.session_state.vfs["root"]:
+                    st.session_state.vfs["root"].append(fname)
+                st.toast(f"Saved to Explorer: {fname}")
+                st.rerun()
+
+            if header_col3.button("✕", key=f"close_btn_{t_id}"):
                 st.session_state.notebooks.pop(i); st.rerun()
 
-            # LIVE MODE CONTROLS
+            # LIVE & MANUAL CONTROLS
             c1, c2 = st.columns([1, 1])
             run_manual = c1.button("▶️ RUN MANUALLY", key=f"run_m_{t_id}", use_container_width=True)
-            live_active = c2.toggle("⚡ LIVE INTERACTING MODE", key=f"live_{t_id}")
-            
-            if live_active:
-                st.markdown("<span class='live-indicator'>● LIVE ENGINE ACTIVE</span>", unsafe_allow_html=True)
+            live_active = c2.toggle("⚡ LIVE MODE", key=f"live_{t_id}")
+
+            # FILE NAME INPUT (For saving new scratchpads)
+            new_name = st.text_input("Filename", value=fname, key=f"name_{t_id}")
+            nb["file"] = new_name # Sync tab metadata
 
             # EDITOR
-            code = st.text_area("Source", value=st.session_state.file_contents.get(fname, ""), height=300, key=f"ed_{t_id}", label_visibility="collapsed")
-            st.session_state.file_contents[fname] = code
+            code = st.text_area("Source", value=st.session_state.file_contents.get(fname, ""), height=250, key=f"ed_{t_id}", label_visibility="collapsed")
+            st.session_state.file_contents[new_name] = code # Map code to the name in input
             
-            # CONSOLE INPUT
+            # CONSOLE
             st.write("⌨️ **BROWSER CONSOLE**")
             stdin_val = st.text_area("Inputs", key=f"in_{t_id}", height=70, label_visibility="collapsed")
             
-            # EXECUTION LOGIC
             if run_manual or live_active:
                 sys.stdin = io.StringIO(stdin_val + "\n" * 100)
                 out_buf = io.StringIO()
