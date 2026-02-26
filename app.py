@@ -13,7 +13,7 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #262730; color: white; }
     .stButton>button:hover { border: 1px solid #4CAF50; }
     </style>
-    """, unsafe_allow_state_usage=True)
+    """, unsafe_allow_html=True)
 
 # --- SIDEBAR NAVIGATION ---
 with st.sidebar:
