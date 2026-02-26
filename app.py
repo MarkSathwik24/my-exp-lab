@@ -38,14 +38,16 @@ def run_analysis_sandbox(file_name, file_bytes, user_inputs=""):
         output_buffer = io.StringIO()
         
         # Prepare the mock terminal input by taking the user's text area and adding extra newlines
-        # so the script doesn't crash if it asks for more inputs than provided.
         input_buffer = io.StringIO(user_inputs + "\n" * 20) 
-        
         sandbox_namespace = {}
         
+        # Manually override the system's standard input
+        original_stdin = sys.stdin
+        sys.stdin = input_buffer
+        
         try:
-            # Redirect BOTH output (print) and input (input())
-            with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stdin(input_buffer):
+            # Only redirect output using contextlib
+            with contextlib.redirect_stdout(output_buffer):
                 exec(code, globals(), sandbox_namespace)
             
             terminal_output = output_buffer.getvalue()
@@ -63,6 +65,10 @@ def run_analysis_sandbox(file_name, file_bytes, user_inputs=""):
                     
         except Exception as e:
             st.error(f"Execution Error in {file_name}: {e}")
+            
+        finally:
+            # CRITICAL: Always restore the original input stream so the server doesn't break
+            sys.stdin = original_stdin
             
     elif file_name.endswith('.csv'):
         df = pd.read_csv(io.BytesIO(file_bytes))
