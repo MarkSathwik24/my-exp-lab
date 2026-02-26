@@ -1,61 +1,91 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import time
 from datetime import datetime
+import time
 
-# 1. Setup & Data Persistence (Local CSV)
-DB_FILE = "study_log.csv"
-if "db" not in st.session_state:
-    try:
-        st.session_state.db = pd.read_csv(DB_FILE)
-    except FileNotFoundError:
-        st.session_state.db = pd.DataFrame(columns=["Date", "Subject", "Minutes"])
+# 1. Page Config
+st.set_page_config(page_title="Research Time-Lap", layout="wide")
+st.title("⏱️ Research Timeline Lab")
 
-st.set_page_config(page_title="Academic Flow", layout="centered")
+# 2. Initialize Session State
+if "laps" not in st.session_state:
+    st.session_state.laps = []
+if "start_time" not in st.session_state:
+    st.session_state.start_time = None
 
-# 2. Sidebar: The Timer (Pomodoro)
-st.sidebar.title("⏳ Focus Timer")
-minutes = st.sidebar.number_input("Session Length (min):", 1, 120, 25)
-subject = st.sidebar.selectbox("Subject:", ["Thesis", "Optimal Control", "GNSS", "Aerodynamics", "Other"])
-
-if st.sidebar.button("Start Session"):
-    with st.empty():
-        for i in range(minutes * 60, 0, -1):
-            mins, secs = divmod(i, 60)
-            st.sidebar.metric("Remaining", f"{mins:02d}:{secs:02d}")
-            time.sleep(1)
-        st.sidebar.success("Session Complete!")
-        
-        # Log data
-        new_row = {"Date": datetime.now().strftime("%Y-%m-%d"), "Subject": subject, "Minutes": minutes}
-        st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([new_row])], ignore_index=True)
-        st.session_state.db.to_csv(DB_FILE, index=False)
-
-# 3. Main UI: Visualization
-st.title("🚀 Academic Performance Tracker")
-
-if not st.session_state.db.empty:
-    # Interactive Plot: Study Distribution
-    st.subheader("Your Study Distribution")
-    fig = px.pie(st.session_state.db, values='Minutes', names='Subject', 
-                 hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Interactive Plot: Productivity over Time
-    st.subheader("Daily Momentum")
-    daily_stats = st.session_state.db.groupby("Date")["Minutes"].sum().reset_index()
-    fig2 = px.bar(daily_stats, x="Date", y="Minutes", 
-                  title="Total Minutes per Day", color_discrete_sequence=['#00CC96'])
-    st.plotly_chart(fig2, use_container_width=True)
+# 3. Sidebar Controls
+st.sidebar.header("Stopwatch")
+if not st.session_state.start_time:
+    if st.sidebar.button("🚀 Start Timer", use_container_width=True):
+        st.session_state.start_time = datetime.now()
+        st.rerun()
 else:
-    st.info("Complete your first session in the sidebar to generate your productivity plots!")
+    elapsed = datetime.now() - st.session_state.start_time
+    st.sidebar.metric("Total Elapsed", f"{str(elapsed).split('.')[0]}")
+    
+    if st.sidebar.button("🚩 Lap / Capture Time", use_container_width=True):
+        new_lap = {
+            "ID": len(st.session_state.laps) + 1,
+            "Timestamp": datetime.now().strftime("%H:%M:%S"),
+            "Duration_Seconds": elapsed.total_seconds(),
+            "Note": ""
+        }
+        st.session_state.laps.append(new_lap)
+    
+    if st.sidebar.button("🛑 Reset", type="primary", use_container_width=True):
+        st.session_state.laps = []
+        st.session_state.start_time = None
+        st.rerun()
 
-# 4. Quick Notes Section
-st.divider()
-st.subheader("📝 Quick Research Notes")
-quick_note = st.text_area("Jot down a quick thought or a formula (LaTeX supported):", placeholder="e.g., $J = \int_{t_0}^{t_f} L(x, u, t) dt$")
-if st.button("Save Note"):
-    with open("quick_notes.txt", "a") as f:
-        f.write(f"\n[{datetime.now()}] {quick_note}")
-    st.toast("Note captured!")
+# 4. Interactive Note Entry
+st.subheader("📝 Lapped Observations")
+if st.session_state.laps:
+    # Convert to DataFrame for easier handling
+    df = pd.DataFrame(st.session_state.laps)
+    
+    # Create an editable data editor for the notes
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "ID": st.column_config.NumberColumn(disabled=True),
+            "Timestamp": st.column_config.TextColumn(disabled=True),
+            "Duration_Seconds": st.column_config.NumberColumn("Elapsed (s)", disabled=True),
+            "Note": st.column_config.TextColumn("Observation / Note", width="large", placeholder="Type what happened here...")
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+    
+    # Sync edits back to session state
+    st.session_state.laps = edited_df.to_dict('records')
+
+    # 5. Interactive Timeline Plot
+    st.divider()
+    st.subheader("📊 Session Timeline")
+    if len(st.session_state.laps) > 0:
+        fig = px.scatter(
+            edited_df, 
+            x="Timestamp", 
+            y="Duration_Seconds", 
+            text="Note",
+            size="Duration_Seconds",
+            color="Duration_Seconds",
+            title="Observations Over Time",
+            labels={"Duration_Seconds": "Seconds since start"},
+            template="plotly_dark"
+        )
+        fig.update_traces(textposition='top center')
+        st.plotly_chart(fig, use_container_width=True)
+        
+    # Export Option
+    if st.button("💾 Export to CSV"):
+        edited_df.to_csv(f"session_log_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", index=False)
+        st.success("Log saved locally!")
+else:
+    st.info("Start the timer and hit 'Lap' to record a timestamped note.")
+
+# 6. Auto-Refresh (UI hack to keep timer visually updating)
+if st.session_state.start_time:
+    time.sleep(1)
+    st.rerun()
