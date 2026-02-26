@@ -32,17 +32,44 @@ if page == "Dashboard":
     st.subheader("Recent Activity")
     st.write("System is ready for aerospace analysis.")
 
-# --- MODULE 2: CODE LIBRARY ---
+# --- MODULE 2: CODE LIBRARY (Optimized for Real-Time Changes) ---
 elif page == "Code Library":
     st.title("📚 Research Library")
-    lib_choice = st.selectbox("Choose Script", ["Eigenvalue Visualizer", "Inverted Pendulum Sim", "PW2000 Thrust Curve"])
-    if st.button("Execute Script"):
-        if lib_choice == "Eigenvalue Visualizer":
-            A = np.array([[2, 1], [1, 2]])
-            vals, vecs = np.linalg.eig(A)
-            st.success(f"Calculated Eigenvalues: {vals}")
-            fig = px.scatter(x=[0, vecs[0,0]], y=[0, vecs[1,0]], title="Eigenvector Direction")
-            st.plotly_chart(fig)
+    
+    lib_choice = st.selectbox("Choose Script", ["Interactive Eigenvalue Viz", "PW2000 Thrust Tracker"])
+    
+    if lib_choice == "Interactive Eigenvalue Viz":
+        st.sidebar.markdown("### 🎛️ Matrix Controls")
+        # Placing sliders in the sidebar allows the plot on the right to update live
+        a11 = st.sidebar.slider("a11 (Top Left)", -5.0, 5.0, 2.0)
+        a12 = st.sidebar.slider("a12 (Top Right)", -5.0, 5.0, 1.0)
+        a21 = st.sidebar.slider("a21 (Bottom Left)", -5.0, 5.0, 1.0)
+        a22 = st.sidebar.slider("a22 (Bottom Right)", -5.0, 5.0, 2.0)
+
+        # Calculation
+        A = np.array([[a11, a12], [a21, a22]])
+        vals, vecs = np.linalg.eig(A)
+
+        # Layout for results
+        col1, col2 = st.columns(2)
+        with col1:
+            st.latex(f"A = \\begin{{bmatrix}} {a11} & {a12} \\\\ {a21} & {a22} \\end{{bmatrix}}")
+        with col2:
+            st.write(f"**λ₁:** {vals[0]:.2f} | **λ₂:** {vals[1]:.2f}")
+
+        # Live Plotly Chart
+        fig = px.scatter(
+            x=[0, vecs[0,0] * vals[0], 0, vecs[0,1] * vals[1]], 
+            y=[0, vecs[1,0] * vals[0], 0, vecs[1,1] * vals[1]],
+            title="Principal Directions (Eigenvectors)",
+            labels={'x': 'X-Axis', 'y': 'Y-Axis'},
+            template="plotly_dark"
+        )
+        # Adding lines to the vectors
+        fig.add_trace(px.line(x=[0, vecs[0,0]*vals[0]], y=[0, vecs[1,0]*vals[0]]).data[0])
+        fig.add_trace(px.line(x=[0, vecs[0,1]*vals[1]], y=[0, vecs[1,1]*vals[1]]).data[0])
+        
+        st.plotly_chart(fig, use_container_width=True)
 
 # --- MODULE 3: LIVE UPLOAD (FIXED LOGIC) ---
 elif page == "Live Upload":
