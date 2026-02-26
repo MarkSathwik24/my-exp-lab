@@ -34,53 +34,69 @@ if page == "Dashboard":
 
 # --- MODULE 2: CODE LIBRARY (Single-Page Layout) ---
 elif page == "Code Library":
-    st.title("📚 Interactive Research Lab")
-    
-    # Selection at the top
-    lib_choice = st.selectbox("Select Experiment", ["Eigenvalue Dynamics", "GNSS Satellite Signal"])
+    st.title("📚 Interactive Eigen-Analysis")
+    st.markdown("Adjust the matrix $A$ to see how eigenvectors (directions) and eigenvalues (scale) change.")
 
-    if lib_choice == "Eigenvalue Dynamics":
-        # Create two columns: Left for Sliders, Right for Plot
-        # On a phone, these will stack vertically for easy touch access
-        control_col, plot_col = st.columns([1, 2])
+    # Create two columns for the 'App' layout
+    # On mobile, these will stack: Controls on top, Plot on bottom
+    control_col, plot_col = st.columns([1, 2])
 
-        with control_col:
-            st.subheader("🎛️ Matrix Inputs")
-            # Real-time sliders
-            a11 = st.slider("a11", -5.0, 5.0, 2.0)
-            a12 = st.slider("a12", -5.0, 5.0, 1.0)
-            a21 = st.slider("a21", -5.0, 5.0, 1.0)
-            a22 = st.slider("a22", -5.0, 5.0, 2.0)
-            
-            # Instant Math Feedback
-            A = np.array([[a11, a12], [a21, a22]])
+    with control_col:
+        st.subheader("🎛️ Matrix Controls")
+        # Real-time sliders that trigger an instant plot update
+        a11 = st.slider("a11 (Top Left)", -5.0, 5.0, 2.0, help="Change the horizontal stretch")
+        a12 = st.slider("a12 (Top Right)", -5.0, 5.0, 1.0, help="Change the shear")
+        a21 = st.slider("a21 (Bottom Left)", -5.0, 5.0, 1.0)
+        a22 = st.slider("a22 (Bottom Right)", -5.0, 5.0, 2.0)
+
+        # Mathematical Engine
+        A = np.array([[a11, a12], [a21, a22]])
+        try:
             vals, vecs = np.linalg.eig(A)
-            st.write(f"**λ₁:** {vals[0]:.2f}")
-            st.write(f"**λ₂:** {vals[1]:.2f}")
-
-        with plot_col:
-            # The plot updates instantly as you move sliders in 'control_col'
-            fig = go.Figure()
             
-            # Plotting Eigenvectors as lines
-            colors = ['#FF4B4B', '#00CC96']
-            for i in range(2):
-                v = vecs[:, i] * vals[i]
-                fig.add_trace(go.Scatter(
-                    x=[0, v[0]], y=[0, v[1]],
-                    mode='lines+markers',
-                    name=f'Vector {i+1}',
-                    line=dict(color=colors[i], width=4)
-                ))
+            st.info(f"**λ₁:** {vals[0].real:.2f} | **λ₂:** {vals[1].real:.2f}")
+            if np.iscomplex(vals).any():
+                st.warning("Complex Eigenvalues: Rotation detected!")
+        except np.linalg.LinAlgError:
+            st.error("Matrix is singular or computation failed.")
 
-            fig.update_layout(
-                template="plotly_dark",
-                height=400,
-                margin=dict(l=0, r=0, t=30, b=0),
-                xaxis=dict(range=[-7, 7]),
-                yaxis=dict(range=[-7, 7])
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    with plot_col:
+        import plotly.graph_objects as go
+        
+        fig = go.Figure()
+
+        # Add a static grid for reference
+        for i in range(-10, 11, 2):
+            fig.add_shape(type="line", x0=i, y0=-10, x1=i, y1=10, line=dict(color="rgba(255,255,255,0.1)", width=1))
+            fig.add_shape(type="line", x0=-10, y0=i, x1=10, y1=i, line=dict(color="rgba(255,255,255,0.1)", width=1))
+
+        # Plot the Eigenvectors
+        colors = ['#00d4ff', '#ff007f'] # Neon Blue and Pink for Jarvis theme
+        for i in range(len(vals)):
+            # Scale vector by its eigenvalue for visualization
+            v = vecs[:, i].real * vals[i].real 
+            
+            fig.add_trace(go.Scatter(
+                x=[0, v[0]], y=[0, v[1]],
+                mode='lines+markers+text',
+                name=f'v{i+1} (λ={vals[i].real:.2f})',
+                text=["", f"v{i+1}"],
+                textposition="top right",
+                line=dict(color=colors[i], width=5),
+                marker=dict(size=10, symbol="arrow-bar-up")
+            ))
+
+        # Final Plot Styling
+        fig.update_layout(
+            template="plotly_dark",
+            height=500,
+            xaxis=dict(range=[-10, 10], zeroline=True, showgrid=False),
+            yaxis=dict(range=[-10, 10], zeroline=True, showgrid=False),
+            margin=dict(l=0, r=0, t=20, b=0),
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 # --- MODULE 3: LIVE UPLOAD (FIXED LOGIC) ---
 elif page == "Live Upload":
     st.title("📥 Mobile Upload")
