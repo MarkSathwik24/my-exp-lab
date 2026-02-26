@@ -14,14 +14,16 @@ if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 if 'vfs' not in st.session_state:
     st.session_state.vfs = {"root": ["main.py"]}
-    st.session_state.file_contents = {"main.py": "x = float(input('Num 1: '))\ny = float(input('Num 2: '))\nprint(f'Sum: {x + y}')"}
+    st.session_state.file_contents = {"main.py": "print('Welcome to MARK SPACE')"}
 if 'notebooks' not in st.session_state:
     st.session_state.notebooks = {"Tab 1": "main.py"}
+if 'tab_counter' not in st.session_state:
+    st.session_state.tab_counter = 1
 
 def toggle_theme():
     st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
 
-# UI Styling
+# UI Styling with High Contrast
 if st.session_state.theme == 'dark':
     bg, fg, editor_bg, accent = "#0d1117", "#e6edf3", "#161b22", "#58a6ff"
     term_bg, term_fg = "#000000", "#39ff14"
@@ -42,10 +44,10 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. FILE DIALOG ---
+# --- 2. DIALOG: NEW FILE ---
 @st.dialog("Create New File")
 def create_file_pop():
-    name = st.text_input("Filename", placeholder="script.py")
+    name = st.text_input("Filename", placeholder="simulation.py")
     c1, c2 = st.columns(2)
     if c1.button("CREATE", use_container_width=True):
         if name:
@@ -53,9 +55,8 @@ def create_file_pop():
             if name not in st.session_state.vfs["root"]:
                 st.session_state.vfs["root"].append(name)
                 st.session_state.file_contents[name] = f"# {name}\n"
-            new_tab = f"Tab {len(st.session_state.notebooks) + 1}"
-            st.session_state.notebooks[new_tab] = name
-            st.rerun()
+                st.success(f"Created {name}")
+                st.rerun()
     if c2.button("CANCEL", use_container_width=True): st.rerun()
 
 # --- 3. SIDEBAR: WORKSPACE CONTROLS ---
@@ -68,27 +69,35 @@ with st.sidebar:
     st.divider()
     workspace_mode = st.radio("WORKSPACE MODE", ["📊 Plotter Mode", "💻 Terminal Compiler"])
     
-    # Sub-mode for Plotter
-    plotter_submode = "Explorer"
-    if workspace_mode == "📊 Plotter Mode":
-        plotter_submode = st.radio("PLOTTER SOURCE", ["📁 Explorer", "📥 Upload"])
+    st.divider()
+    # DISTINCT TAB VS FILE ACTIONS
+    if st.button("➕ NEW TAB", use_container_width=True):
+        st.session_state.tab_counter += 1
+        new_tab_label = f"Tab {st.session_state.tab_counter}"
+        # Scratchpad default
+        st.session_state.notebooks[new_tab_label] = "scratchpad.py"
+        if "scratchpad.py" not in st.session_state.file_contents:
+            st.session_state.file_contents["scratchpad.py"] = "# Scratchpad\n"
+        st.rerun()
+
+    if st.button("📄 NEW FILE", use_container_width=True):
+        create_file_pop()
     
     st.divider()
-    if st.button("➕ NEW TAB / FILE", use_container_width=True): create_file_pop()
-    
     st.markdown("### 📁 EXPLORER")
     for f in st.session_state.vfs["root"]:
         c1, c2 = st.columns([5, 1])
         if c1.button(f"📄 {f}", key=f"sb_{f}", use_container_width=True):
-            new_tab = f"Tab {len(st.session_state.notebooks) + 1}"
-            st.session_state.notebooks[new_tab] = f; st.rerun()
+            st.session_state.tab_counter += 1
+            st.session_state.notebooks[f"Tab {st.session_state.tab_counter}"] = f
+            st.rerun()
         if c2.button("✕", key=f"del_{f}"):
             st.session_state.vfs["root"].remove(f); st.rerun()
 
 # --- 4. MAIN INTERFACE ---
 tab_keys = list(st.session_state.notebooks.keys())
 if not tab_keys:
-    st.info("Select a file from the explorer to begin.")
+    st.info("Click '➕ NEW TAB' or select a file from the Explorer.")
 else:
     ui_tabs = st.tabs(tab_keys)
     for i, t_key in enumerate(tab_keys):
@@ -97,17 +106,10 @@ else:
             
             # Tab Header
             th1, th2 = st.columns([10, 1])
-            th1.markdown(f"**FILE:** `{fname}` | **MODE:** `{workspace_mode}`")
+            th1.markdown(f"**WORKSPACE:** `{t_key}` | **FILE:** `{fname}`")
             if th2.button("✕", key=f"cls_{t_key}"):
                 del st.session_state.notebooks[t_key]; st.rerun()
 
-            # Plotter Upload Logic
-            if workspace_mode == "📊 Plotter Mode" and plotter_submode == "📥 Upload":
-                up_file = st.file_uploader(f"Upload .py for {t_key}", type=['py'], key=f"up_{t_key}")
-                if up_file:
-                    content = up_file.getvalue().decode("utf-8")
-                    st.session_state.file_contents[fname] = content
-            
             # Editor
             code = st.text_area("EDITOR", value=st.session_state.file_contents.get(fname, ""), height=300, key=f"ed_{t_key}", label_visibility="collapsed")
             st.session_state.file_contents[fname] = code
@@ -120,7 +122,6 @@ else:
             
             if st.button("▶️ RUN EXECUTION", type="primary", use_container_width=True, key=f"run_{t_key}"):
                 output_buffer = io.StringIO()
-                # FIX: Pre-pad stdin with extra newlines to prevent 'float conversion' errors on empty inputs
                 sys.stdin = io.StringIO(stdin_data + "\n" * 100)
                 
                 try:
