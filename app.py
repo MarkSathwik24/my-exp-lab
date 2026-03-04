@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import datetime
 import os
+import calendar
 
 DATA_FILE = "path_data_v3.json"
 
@@ -35,24 +36,23 @@ data = load_data()
 today = str(datetime.date.today())
 current_week = f"{datetime.date.today().year}-W{datetime.date.today().isocalendar()[1]}"
 
-# --- BUG FIX: STRICT SYNC AND PURGE ---
-# This ensures that today's log perfectly matches the current settings. 
-# Any deleted tasks/subtasks are instantly purged from the current day's denominator.
+# Strict Sync and Purge
 current_daily_log = data["daily_logs"].get(today, {})
 data["daily_logs"][today] = {
     task: {sub: current_daily_log.get(task, {}).get(sub, False) for sub in subs}
     for task, subs in data["daily_tasks"].items()
 }
 
-# Same strict sync for the current week
 current_weekly_log = data["weekly_logs"].get(current_week, {})
 data["weekly_logs"][current_week] = {
     task: {sub: current_weekly_log.get(task, {}).get(sub, False) for sub in subs}
     for task, subs in data["weekly_tasks"].items()
 }
-
-# Save the purged data back to the file
 save_data(data)
+
+# Ensure session state for calendar tracking
+if "selected_date" not in st.session_state:
+    st.session_state.selected_date = datetime.date.today()
 
 # --- APP LAYOUT ---
 st.set_page_config(page_title="My Path Tracker", layout="centered")
@@ -143,9 +143,58 @@ with tab_history:
     
     st.divider()
 
-    st.subheader("Inspect a Specific Date")
-    selected_date = st.date_input("🗓️ Select a date to view your end-of-day snapshot", datetime.date.today())
-    selected_date_str = str(selected_date)
+    # --- INTERACTIVE CALENDAR ---
+    st.subheader("📅 Monthly Calendar")
+    st.write("🟢 100% | 🟡 ≥50% | 🟠 >0% | 🔴 0% | ⚪ No Data")
+    
+    # Let user pick the month they want to look at
+    selected_date_input = st.date_input("Jump to a specific date or use the grid below:", st.session_state.selected_date)
+    st.session_state.selected_date = selected_date_input
+    
+    sel_year = st.session_state.selected_date.year
+    sel_month = st.session_state.selected_date.month
+    
+    cal = calendar.monthcalendar(sel_year, sel_month)
+    month_name = calendar.month_name[sel_month]
+    
+    st.write(f"### {month_name} {sel_year}")
+    
+    # Create Calendar Grid Headers
+    days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    cols = st.columns(7)
+    for i, day_name in enumerate(days_of_week):
+        cols[i].write(f"**{day_name}**")
+        
+    # Fill the Calendar Grid
+    for week in cal:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                date_str = f"{sel_year}-{sel_month:02d}-{day:02d}"
+                
+                # Determine color indicator
+                emoji = "⚪"
+                if date_str in data["daily_logs"]:
+                    day_log = data["daily_logs"][date_str]
+                    total = sum(len(subs) for subs in day_log.values())
+                    if total > 0:
+                        completed = sum(sum(1 for v in subs.values() if v) for subs in day_log.values())
+                        pct = completed / total
+                        if pct == 1.0: emoji = "🟢"
+                        elif pct >= 0.5: emoji = "🟡"
+                        elif pct > 0: emoji = "🟠"
+                        else: emoji = "🔴"
+                
+                # Make each day a button
+                if cols[i].button(f"{day}\n{emoji}", use_container_width=True, key=f"cal_btn_{date_str}"):
+                    st.session_state.selected_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                    st.rerun()
+
+    st.divider()
+
+    # --- DETAILED SNAPSHOT ---
+    selected_date_str = str(st.session_state.selected_date)
+    st.subheader(f"Snapshot for {selected_date_str}")
     
     if selected_date_str in data["daily_logs"]:
         day_log = data["daily_logs"][selected_date_str]
@@ -155,7 +204,7 @@ with tab_history:
         
         if hist_total > 0:
             hist_pct = hist_completed / hist_total
-            st.metric(label=f"Total Progress on {selected_date_str}", value=f"{int(hist_pct*100)}%", delta=f"{hist_completed}/{hist_total} subtasks completed")
+            st.metric(label="Total Progress", value=f"{int(hist_pct*100)}%", delta=f"{hist_completed}/{hist_total} subtasks completed")
             st.progress(hist_pct)
             
             st.write("**Task Breakdown:**")
