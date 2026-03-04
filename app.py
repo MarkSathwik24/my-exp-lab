@@ -1,9 +1,9 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import json
 import datetime
 import os
+import calendar
 
 DATA_FILE = "path_data_v3.json"
 
@@ -49,6 +49,10 @@ data["weekly_logs"][current_week] = {
     for task, subs in data["weekly_tasks"].items()
 }
 save_data(data)
+
+# Initialize Session State for Date Selection
+if "selected_date" not in st.session_state:
+    st.session_state.selected_date = datetime.date.today()
 
 # --- APP LAYOUT ---
 st.set_page_config(page_title="My Path Tracker", layout="centered")
@@ -116,20 +120,9 @@ with tab_weekly:
 
 # --- TAB 3: CALENDAR & HISTORY ---
 with tab_history:
-    st.header("📅 My Calendar")
-    
-    # --- GOOGLE CALENDAR EMBED ---
-    # Replace the 'src' link in the iframe below with your own personal Google Calendar link!
-    st.write("*(Currently showing Indian Holidays. You can replace this with your own Google Calendar!)*")
-    calendar_html = """
-    <iframe src="https://calendar.google.com/calendar/embed?height=500&wkst=1&bgcolor=%23ffffff&ctz=Asia%2FKolkata&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=1&showCalendars=0&showTz=0&src=ZW4uaW5kaWFuI2hvbGlkYXlAZ3JvdXAudi5jYWxlbmRhci5nb29nbGUuY29t&color=%230B8043" 
-    style="border:solid 1px #777" width="100%" height="500" frameborder="0" scrolling="no"></iframe>
-    """
-    components.html(calendar_html, height=520)
-
-    st.divider()
-    
     st.header("📈 Tracking History")
+    
+    # 1. Top Section: 30-Day Trend
     st.subheader("Last 30 Days Trend")
     last_30_days = [str(datetime.date.today() - datetime.timedelta(days=i)) for i in range(29, -1, -1)]
     trend_data = {"Date": [], "Progress (%)": []}
@@ -148,12 +141,18 @@ with tab_history:
         
     df_trend = pd.DataFrame(trend_data)
     st.bar_chart(df_trend.set_index("Date"))
-    
     st.divider()
 
+    # 2. Middle Section: Specific Date Snapshot
     st.subheader("Inspect a Specific Date")
-    selected_date = st.date_input("🗓️ Select a date to view your end-of-day snapshot", datetime.date.today())
-    selected_date_str = str(selected_date)
+    
+    # Update session state if the date input is changed manually
+    selected_date_input = st.date_input("🗓️ View end-of-day snapshot for:", st.session_state.selected_date)
+    if selected_date_input != st.session_state.selected_date:
+        st.session_state.selected_date = selected_date_input
+        st.rerun()
+        
+    selected_date_str = str(st.session_state.selected_date)
     
     if selected_date_str in data["daily_logs"]:
         day_log = data["daily_logs"][selected_date_str]
@@ -177,6 +176,35 @@ with tab_history:
              st.info(f"No tasks were logged on {selected_date_str}.")
     else:
         st.warning(f"No activity recorded for {selected_date_str}.")
+
+    st.divider()
+
+    # 3. Bottom Section: Normal Visual Calendar
+    st.subheader("📅 Monthly Calendar")
+    
+    sel_year = st.session_state.selected_date.year
+    sel_month = st.session_state.selected_date.month
+    
+    cal = calendar.monthcalendar(sel_year, sel_month)
+    month_name = calendar.month_name[sel_month]
+    
+    st.write(f"### {month_name} {sel_year}")
+    
+    # Days of week headers
+    days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    cols = st.columns(7)
+    for i, day_name in enumerate(days_of_week):
+        cols[i].write(f"**{day_name}**")
+        
+    # Calendar Grid
+    for week in cal:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                # If a day is clicked, update the selected date and refresh to show the snapshot above
+                if cols[i].button(str(day), use_container_width=True, key=f"cal_{sel_year}_{sel_month}_{day}"):
+                    st.session_state.selected_date = datetime.date(sel_year, sel_month, day)
+                    st.rerun()
 
 # --- TAB 4: SETTINGS ---
 with tab_settings:
