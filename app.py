@@ -35,31 +35,29 @@ data = load_data()
 today = str(datetime.date.today())
 current_week = f"{datetime.date.today().year}-W{datetime.date.today().isocalendar()[1]}"
 
-# Safely initialize today's logs based on current settings
-if today not in data["daily_logs"]:
-    data["daily_logs"][today] = {}
-for task, subs in data["daily_tasks"].items():
-    if task not in data["daily_logs"][today]:
-        data["daily_logs"][today][task] = {}
-    for sub in subs:
-        if sub not in data["daily_logs"][today][task]:
-            data["daily_logs"][today][task][sub] = False
+# --- BUG FIX: STRICT SYNC AND PURGE ---
+# This ensures that today's log perfectly matches the current settings. 
+# Any deleted tasks/subtasks are instantly purged from the current day's denominator.
+current_daily_log = data["daily_logs"].get(today, {})
+data["daily_logs"][today] = {
+    task: {sub: current_daily_log.get(task, {}).get(sub, False) for sub in subs}
+    for task, subs in data["daily_tasks"].items()
+}
 
-# Safely initialize this week's logs
-if current_week not in data["weekly_logs"]:
-    data["weekly_logs"][current_week] = {}
-for task, subs in data["weekly_tasks"].items():
-    if task not in data["weekly_logs"][current_week]:
-        data["weekly_logs"][current_week][task] = {}
-    for sub in subs:
-        if sub not in data["weekly_logs"][current_week][task]:
-             data["weekly_logs"][current_week][task][sub] = False
+# Same strict sync for the current week
+current_weekly_log = data["weekly_logs"].get(current_week, {})
+data["weekly_logs"][current_week] = {
+    task: {sub: current_weekly_log.get(task, {}).get(sub, False) for sub in subs}
+    for task, subs in data["weekly_tasks"].items()
+}
+
+# Save the purged data back to the file
+save_data(data)
 
 # --- APP LAYOUT ---
 st.set_page_config(page_title="My Path Tracker", layout="centered")
 st.title("My Path Tracker")
 
-# Added the new History tab
 tab_daily, tab_weekly, tab_history, tab_settings = st.tabs(["Daily Path", "Weekly Path", "Calendar & History", "Settings"])
 
 # --- TAB 1: DAILY PATH ---
@@ -124,7 +122,6 @@ with tab_weekly:
 with tab_history:
     st.header("Your Journey")
     
-    # Visual Chart of the last 30 days
     st.subheader("Last 30 Days Trend")
     last_30_days = [str(datetime.date.today() - datetime.timedelta(days=i)) for i in range(29, -1, -1)]
     trend_data = {"Date": [], "Progress (%)": []}
@@ -146,7 +143,6 @@ with tab_history:
     
     st.divider()
 
-    # Calendar Date Picker
     st.subheader("Inspect a Specific Date")
     selected_date = st.date_input("🗓️ Select a date to view your end-of-day snapshot", datetime.date.today())
     selected_date_str = str(selected_date)
@@ -154,7 +150,6 @@ with tab_history:
     if selected_date_str in data["daily_logs"]:
         day_log = data["daily_logs"][selected_date_str]
         
-        # Calculate historical stats for the selected day
         hist_total = sum(len(subs) for subs in day_log.values())
         hist_completed = sum(sum(1 for v in subs.values() if v) for subs in day_log.values())
         
@@ -165,7 +160,7 @@ with tab_history:
             
             st.write("**Task Breakdown:**")
             for task, subs in day_log.items():
-                if subs: # Only show if there were subtasks
+                if subs: 
                     with st.expander(task):
                         for sub, is_done in subs.items():
                             status = "✅" if is_done else "❌"
