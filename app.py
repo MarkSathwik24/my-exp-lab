@@ -1,14 +1,27 @@
 import streamlit as st
 import pandas as pd
-import json
 import datetime
-import os
+import calendar
+import requests
 
-DATA_FILE = "path_data_v3.json"
+# --- CLOUD DATABASE SETUP ---
+# Streamlit will securely read this URL from its Cloud Servers
+try:
+    # Make sure your URL ends with /path_data.json
+    DB_URL = st.secrets["DB_URL"] 
+except FileNotFoundError:
+    # If running locally without secrets, paste your Firebase URL here for testing:
+    DB_URL = "https://path-tracker-82d1a-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
-# --- DATA INITIALIZATION ---
 def load_data():
-    if not os.path.exists(DATA_FILE):
+    try:
+        response = requests.get(DB_URL)
+        data = response.json()
+    except Exception:
+        data = None
+
+    if not data:
+        # Default template setup
         default_data = {
             "daily_tasks": {
                 "Control Systems Study": ["Review LQR code", "Simulate inverted pendulum"],
@@ -21,15 +34,15 @@ def load_data():
             "daily_logs": {},
             "weekly_logs": {}
         }
-        with open(DATA_FILE, "w") as f:
-            json.dump(default_data, f)
-            
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        requests.put(DB_URL, json=default_data)
+        return default_data
+        
+    return data
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+    requests.put(DB_URL, json=data)
+
+# --- The rest of your app code remains exactly the same below this line ---
 
 data = load_data()
 today = str(datetime.date.today())
