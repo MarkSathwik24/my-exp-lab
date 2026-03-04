@@ -1,9 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import json
 import datetime
 import os
-import calendar
 
 DATA_FILE = "path_data_v3.json"
 
@@ -49,10 +49,6 @@ data["weekly_logs"][current_week] = {
     for task, subs in data["weekly_tasks"].items()
 }
 save_data(data)
-
-# Ensure session state for calendar tracking
-if "selected_date" not in st.session_state:
-    st.session_state.selected_date = datetime.date.today()
 
 # --- APP LAYOUT ---
 st.set_page_config(page_title="My Path Tracker", layout="centered")
@@ -120,8 +116,20 @@ with tab_weekly:
 
 # --- TAB 3: CALENDAR & HISTORY ---
 with tab_history:
-    st.header("Your Journey")
+    st.header("📅 My Calendar")
     
+    # --- GOOGLE CALENDAR EMBED ---
+    # Replace the 'src' link in the iframe below with your own personal Google Calendar link!
+    st.write("*(Currently showing Indian Holidays. You can replace this with your own Google Calendar!)*")
+    calendar_html = """
+    <iframe src="https://calendar.google.com/calendar/embed?height=500&wkst=1&bgcolor=%23ffffff&ctz=Asia%2FKolkata&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=1&showCalendars=0&showTz=0&src=ZW4uaW5kaWFuI2hvbGlkYXlAZ3JvdXAudi5jYWxlbmRhci5nb29nbGUuY29t&color=%230B8043" 
+    style="border:solid 1px #777" width="100%" height="500" frameborder="0" scrolling="no"></iframe>
+    """
+    components.html(calendar_html, height=520)
+
+    st.divider()
+    
+    st.header("📈 Tracking History")
     st.subheader("Last 30 Days Trend")
     last_30_days = [str(datetime.date.today() - datetime.timedelta(days=i)) for i in range(29, -1, -1)]
     trend_data = {"Date": [], "Progress (%)": []}
@@ -143,58 +151,9 @@ with tab_history:
     
     st.divider()
 
-    # --- INTERACTIVE CALENDAR ---
-    st.subheader("📅 Monthly Calendar")
-    st.write("🟢 100% | 🟡 ≥50% | 🟠 >0% | 🔴 0% | ⚪ No Data")
-    
-    # Let user pick the month they want to look at
-    selected_date_input = st.date_input("Jump to a specific date or use the grid below:", st.session_state.selected_date)
-    st.session_state.selected_date = selected_date_input
-    
-    sel_year = st.session_state.selected_date.year
-    sel_month = st.session_state.selected_date.month
-    
-    cal = calendar.monthcalendar(sel_year, sel_month)
-    month_name = calendar.month_name[sel_month]
-    
-    st.write(f"### {month_name} {sel_year}")
-    
-    # Create Calendar Grid Headers
-    days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    cols = st.columns(7)
-    for i, day_name in enumerate(days_of_week):
-        cols[i].write(f"**{day_name}**")
-        
-    # Fill the Calendar Grid
-    for week in cal:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day != 0:
-                date_str = f"{sel_year}-{sel_month:02d}-{day:02d}"
-                
-                # Determine color indicator
-                emoji = "⚪"
-                if date_str in data["daily_logs"]:
-                    day_log = data["daily_logs"][date_str]
-                    total = sum(len(subs) for subs in day_log.values())
-                    if total > 0:
-                        completed = sum(sum(1 for v in subs.values() if v) for subs in day_log.values())
-                        pct = completed / total
-                        if pct == 1.0: emoji = "🟢"
-                        elif pct >= 0.5: emoji = "🟡"
-                        elif pct > 0: emoji = "🟠"
-                        else: emoji = "🔴"
-                
-                # Make each day a button
-                if cols[i].button(f"{day}\n{emoji}", use_container_width=True, key=f"cal_btn_{date_str}"):
-                    st.session_state.selected_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-                    st.rerun()
-
-    st.divider()
-
-    # --- DETAILED SNAPSHOT ---
-    selected_date_str = str(st.session_state.selected_date)
-    st.subheader(f"Snapshot for {selected_date_str}")
+    st.subheader("Inspect a Specific Date")
+    selected_date = st.date_input("🗓️ Select a date to view your end-of-day snapshot", datetime.date.today())
+    selected_date_str = str(selected_date)
     
     if selected_date_str in data["daily_logs"]:
         day_log = data["daily_logs"][selected_date_str]
@@ -204,7 +163,7 @@ with tab_history:
         
         if hist_total > 0:
             hist_pct = hist_completed / hist_total
-            st.metric(label="Total Progress", value=f"{int(hist_pct*100)}%", delta=f"{hist_completed}/{hist_total} subtasks completed")
+            st.metric(label=f"Total Progress on {selected_date_str}", value=f"{int(hist_pct*100)}%", delta=f"{hist_completed}/{hist_total} subtasks completed")
             st.progress(hist_pct)
             
             st.write("**Task Breakdown:**")
